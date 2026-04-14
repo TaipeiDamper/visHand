@@ -135,6 +135,8 @@ class GestureInterpreter:
         # SNAP two-phase machine
         self._snap_phase: str = "IDLE"        # "IDLE" | "READY"
         self._prev_mid_thumb_dist: Optional[float] = None
+        self._prev_idx_thumb_dist: Optional[float] = None
+        self._prev_mid_palm_dist: Optional[float] = None
         self._last_snap_time: float = 0.0
 
         # DOUBLE_TAP
@@ -165,8 +167,10 @@ class GestureInterpreter:
         s = self.s
         now_ms_ok = (timestamp - self._last_snap_time) > (s.snap_cooldown_ms / 1000.0)
 
-        # ── SNAP (two-phase) ────────────────────────────────────────────────
+        # ── SNAP (two-phase composite scoring) ──────────────────────────────
         mid_thumb = mt.normalized_distance(lm[mt.MIDDLE_TIP], lm[mt.THUMB_TIP], lm)
+        idx_thumb = mt.normalized_distance(lm[mt.INDEX_TIP], lm[mt.THUMB_TIP], lm)
+        mid_palm  = mt.normalized_distance(lm[mt.MIDDLE_TIP], lm[0], lm) # 0 is WRIST
 
         if self._snap_phase == "IDLE":
             if mid_thumb < s.snap_ready_threshold:
@@ -174,20 +178,33 @@ class GestureInterpreter:
 
         elif self._snap_phase == "READY":
             if mid_thumb > s.snap_trigger_threshold:
-                # Separation happened — check speed
+                # Separation happened — check composite speeds
                 if self._prev_mid_thumb_dist is not None:
-                    sep_vel = mid_thumb - self._prev_mid_thumb_dist  # per-frame
-                    if sep_vel > s.snap_velocity_threshold and now_ms_ok:
+                    sep_vel = mid_thumb - self._prev_mid_thumb_dist                # Expect > 0
+                    idx_crash_vel = idx_thumb - self._prev_idx_thumb_dist          # Expect < 0
+                    palm_crash_vel = mid_palm - self._prev_mid_palm_dist           # Expect < 0
+                    
+                    score = 0.0
+                    if sep_vel > 0:       score += sep_vel * 10.0
+                    if idx_crash_vel < 0: score += (-idx_crash_vel) * 10.0
+                    if palm_crash_vel < 0: score += (-palm_crash_vel) * 10.0
+                    
+                    if score > s.snap_score_threshold and now_ms_ok:
                         self._last_snap_time = timestamp
                         self._snap_phase = "IDLE"
                         self._prev_mid_thumb_dist = mid_thumb
+                        self._prev_idx_thumb_dist = idx_thumb
+                        self._prev_mid_palm_dist = mid_palm
                         return EV_SNAP
+                        
                 self._snap_phase = "IDLE"
-            elif mid_thumb > s.snap_ready_threshold * 1.4:
+            elif mid_thumb > s.snap_ready_threshold * 1.6:
                 # Drifted back without a snap
                 self._snap_phase = "IDLE"
 
         self._prev_mid_thumb_dist = mid_thumb
+        self._prev_idx_thumb_dist = idx_thumb
+        self._prev_mid_palm_dist = mid_palm
 
         # ── DOUBLE_TAP ──────────────────────────────────────────────────────
         pinch_norm = mt.normalized_distance(lm[mt.THUMB_TIP], lm[mt.INDEX_TIP], lm)
@@ -230,8 +247,9 @@ class GestureInterpreter:
             vel = mt.instant_velocity(self._anchor_history, 5)
             return PINCH_DRAG if vel > s.drag_start_velocity else PINCH_HOLD
 
-        # Fist — all four fingers curled
-        if not any(ext_fingers):
+        # Fist — Check curl threshold for the four non-thumb fingers
+        curl_values = [mt.finger_curl(lm, i) for i in range(1, 5)]
+        if all(c > s.fist_curl_threshold for c in curl_values):
             return FIST
 
         # Open palm — all four fingers extended

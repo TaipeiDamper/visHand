@@ -34,6 +34,7 @@ from config.settings import Settings
 from core.detector import HandDetector
 from core.interpreter import GestureInterpreter
 from utils.visualizer import DebugVisualizer
+from utils.minigame import Minigame
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +44,8 @@ from utils.visualizer import DebugVisualizer
 def _parse_args():
     p = argparse.ArgumentParser(description="visHand — live debug demo")
     p.add_argument("--camera",    type=int, default=0, help="Camera device index (default: 0)")
-    p.add_argument("--max-hands", type=int, default=1, choices=[1, 2],
-                   help="Max hands to track (default: 1)")
+    p.add_argument("--max-hands", type=int, default=2, choices=[1, 2],
+                   help="Max hands to track (default: 2)")
     return p.parse_args()
 
 
@@ -67,6 +68,7 @@ def main():
         detector     = HandDetector(settings)
         interpreters = [GestureInterpreter(settings) for _ in range(settings.max_hands)]
         visualizer   = DebugVisualizer()
+        minigame     = Minigame()
     except RuntimeError as e:
         print(e)
         sys.exit(1)
@@ -98,6 +100,9 @@ def main():
             # ── Detection ─────────────────────────────────────────────────────
             results = detector.extract_landmarks(frame)
 
+            payloads_this_frame = []
+            raw_lms_this_frame = []
+
             if results:
                 # Process each detected hand (up to max_hands)
                 for i, result in enumerate(results[: settings.max_hands]):
@@ -107,27 +112,29 @@ def main():
                     )
                     raw_lm   = result.raw_landmarks
 
+                    payloads_this_frame.append(payload)
+                    raw_lms_this_frame.append(raw_lm)
+
                     # Print to stdout when something interesting happens
                     ev = payload["dynamics"]["event"]
                     it = payload["state"]["intent"]
                     if ev != "NONE" or it not in ("IDLE", "OPEN_PALM"):
                         print(json.dumps(payload, ensure_ascii=False))
 
-                    # Only draw overlay for the primary hand
-                    if i == 0:
-                        last_payload = payload
-                        primary_raw  = raw_lm
             else:
                 # No hand — feed None to keep state machine updated
                 payload = interpreters[0].process(None, "RIGHT", timestamp, frame_id)
-                if last_payload is None:
-                    last_payload = payload
-                primary_raw = None
+                payloads_this_frame = [payload]
+                raw_lms_this_frame = [None]
 
-            # ── Draw ──────────────────────────────────────────────────────────
+            # ── Minigame & Draw ───────────────────────────────────────────────
             vis = visualizer.draw(
-                frame, last_payload, primary_raw, timestamp, fps
+                frame, payloads_this_frame, raw_lms_this_frame, timestamp, fps
             )
+            
+            # Draw minigame overlay on top
+            vis = minigame.update(vis, payloads_this_frame, raw_lms_this_frame, timestamp)
+            
             visualizer.show(vis)
 
             frame_id += 1
@@ -136,6 +143,13 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key in (27, ord("q"), ord("Q")):   # ESC or Q
                 break
+                
+            # Handle user closing the window with the 'X' button
+            try:
+                if cv2.getWindowProperty(visualizer.window_name, cv2.WND_PROP_VISIBLE) < 1:
+                    break
+            except Exception:
+                break
 
     except KeyboardInterrupt:
         print("\n[visHand Demo] Interrupted.")
@@ -143,6 +157,7 @@ def main():
         detector.release()
         visualizer.close()
         cv2.destroyAllWindows()
+        cv2.waitKey(1)  # ensure windows close properly
         print("[visHand Demo] Closed.")
 
 

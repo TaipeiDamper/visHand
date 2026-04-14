@@ -18,7 +18,7 @@ class Settings:
     frame_height: int = 480
 
     # ── MediaPipe Hands ────────────────────────────────────────────────────────
-    max_hands: int = 1             # 1 for single-hand mode (extend to 2 later)
+    max_hands: int = 2             # 2 for dual-hand mode
     min_detection_confidence: float = 0.70
     min_tracking_confidence: float = 0.60
 
@@ -34,12 +34,12 @@ class Settings:
     pinch_release_threshold: float = 0.28  # exit PINCH above this
 
     # Snap two-phase detection (middle tip ↔ thumb tip)
-    snap_ready_threshold: float = 0.22  # contact zone → SNAP_READY
-    snap_trigger_threshold: float = 0.45  # separation needed to fire SNAP
-    snap_velocity_threshold: float = 0.05  # min per-frame dist change to confirm snap
+    snap_ready_threshold: float = 0.20  # contact zone → SNAP_READY
+    snap_trigger_threshold: float = 0.28  # separation needed to fire SNAP
+    snap_score_threshold: float = 0.25  # composite score (separation + hits) to confirm snap
 
     # Finger curl (open palm / fist)
-    fist_curl_threshold: float = 0.60   # all fingers above this → FIST
+    fist_curl_threshold: float = 0.45   # all fingers above this → FIST
 
     # ── Motion Thresholds ──────────────────────────────────────────────────────
     swipe_velocity_threshold: float = 0.040   # fast lateral motion → SWIPE
@@ -51,7 +51,7 @@ class Settings:
     locked_to_hover_frames: int = 3     # consecutive hand frames → HOVER
 
     # ── Event Timing ──────────────────────────────────────────────────────────
-    snap_cooldown_ms: float = 600.0        # min ms between SNAP events
+    snap_cooldown_ms: float = 100.0        # min ms between SNAP events
     double_tap_window_ms: float = 350.0   # two pinch onsets within this → DOUBLE_TAP
 
     # ── Output / Debug ────────────────────────────────────────────────────────

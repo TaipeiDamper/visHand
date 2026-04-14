@@ -12,7 +12,7 @@ OpenCV-based debug overlay.  Draws:
 
 Usage:
     vis = DebugVisualizer()
-    annotated = vis.draw(frame, payload, raw_lm, timestamp)
+    annotated = vis.draw(frame, payloads, raw_lms, timestamp)
     vis.show(annotated)
 """
 
@@ -86,8 +86,8 @@ class DebugVisualizer:
     def draw(
         self,
         frame:        np.ndarray,
-        payload:      dict,
-        raw_lm=None,                   # mediapipe NormalizedLandmarkList or None
+        payloads:     list,
+        raw_lms:      list,
         timestamp:    float = 0.0,
         fps:          float = 0.0,
     ) -> np.ndarray:
@@ -107,24 +107,45 @@ class DebugVisualizer:
         vis = frame.copy()
         h, w = vis.shape[:2]
         now  = timestamp if timestamp else _time.time()
+        
+        # We will use the first hand's payload for the main panel and border color
+        main_payload = payloads[0] if payloads else None
+        
+        state_color = _CLR["WHITE"]
+        logic = "LOCKED"
+        intent = "IDLE"
+        stable = False
+        event = EV_NONE
+        vel, intensity, rotation = 0.0, 0.0, 0.0
+        
+        if main_payload:
+            logic   = main_payload["state"]["logic"]
+            intent  = main_payload["state"]["intent"]
+            stable  = main_payload["state"]["is_stable"]
+            event   = main_payload["dynamics"]["event"]
+            vel     = main_payload["dynamics"]["velocity"]
+            rotation = main_payload["transform"]["rotation"]
+            intensity = main_payload["dynamics"]["intensity"]
+            state_color = _CLR.get(logic, _CLR["WHITE"])
+            
+            # Check if any hand has an event to display
+            for p in payloads:
+                if p and p["dynamics"]["event"] != EV_NONE:
+                    event = p["dynamics"]["event"]
+                    break
 
-        logic   = payload["state"]["logic"]
-        intent  = payload["state"]["intent"]
-        stable  = payload["state"]["is_stable"]
-        event   = payload["dynamics"]["event"]
-        vel     = payload["dynamics"]["velocity"]
-        anchor  = payload["transform"]["anchor"]
-        rotation = payload["transform"]["rotation"]
-        intensity = payload["dynamics"]["intensity"]
+        # ── 1-3. Skeletons & Anchors for all hands ────────────────────────────
+        for i, raw_lm in enumerate(raw_lms):
+            if not raw_lm: continue
+            
+            p_logic = payloads[i]["state"]["logic"] if i < len(payloads) else "LOCKED"
+            p_intent = payloads[i]["state"]["intent"] if i < len(payloads) else "IDLE"
+            p_color = _CLR.get(p_logic, _CLR["WHITE"])
 
-        state_color = _CLR.get(logic, _CLR["WHITE"])
-
-        # ── 1. Hand skeleton ──────────────────────────────────────────────────
-        if raw_lm is not None:
-            if logic == "ACTIVE":
+            if p_logic == "ACTIVE":
                 lm_spec   = _mp_drawing.DrawingSpec(color=_CLR["ACTIVE"],  thickness=3, circle_radius=4)
                 conn_spec = _mp_drawing.DrawingSpec(color=(30, 180, 60),   thickness=2)
-            elif logic == "HOVER":
+            elif p_logic == "HOVER":
                 lm_spec   = _mp_drawing.DrawingSpec(color=_CLR["HOVER"],   thickness=3, circle_radius=4)
                 conn_spec = _mp_drawing.DrawingSpec(color=(160, 120, 20),  thickness=2)
             else:
@@ -135,18 +156,20 @@ class DebugVisualizer:
                 vis, raw_lm, _mp_hands.HAND_CONNECTIONS, lm_spec, conn_spec
             )
 
-        # ── 2. SNAP_READY highlight ───────────────────────────────────────────
-        if intent == "SNAP_READY" and raw_lm is not None:
-            for lm_id in (4, 12):   # THUMB_TIP, MIDDLE_TIP
-                lm = raw_lm.landmark[lm_id]
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                cv2.circle(vis, (cx, cy), 14, _CLR["SNAP_READY"], -1)
-                cv2.circle(vis, (cx, cy), 16, _CLR["WHITE"],      2)
+            # SNAP_READY highlight
+            if p_intent == "SNAP_READY" and raw_lm is not None:
+                for lm_id in (4, 12):   # THUMB_TIP, MIDDLE_TIP
+                    lm = raw_lm.landmark[lm_id]
+                    cx, cy = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(vis, (cx, cy), 14, _CLR["SNAP_READY"], -1)
+                    cv2.circle(vis, (cx, cy), 16, _CLR["WHITE"],      2)
 
-        # ── 3. Anchor crosshair ───────────────────────────────────────────────
-        ax, ay = int(anchor["x"] * w), int(anchor["y"] * h)
-        if 0 < ax < w and 0 < ay < h:
-            cv2.drawMarker(vis, (ax, ay), state_color, cv2.MARKER_CROSS, 22, 2)
+            # Anchor crosshair
+            anchor = payloads[i]["transform"]["anchor"] if i < len(payloads) else None
+            if anchor:
+                ax, ay = int(anchor["x"] * w), int(anchor["y"] * h)
+                if 0 < ax < w and 0 < ay < h:
+                    cv2.drawMarker(vis, (ax, ay), p_color, cv2.MARKER_CROSS, 22, 2)
 
         # ── 4. Coloured border (logic state) ─────────────────────────────────
         cv2.rectangle(vis, (0, 0), (w - 1, h - 1), state_color, 3)
