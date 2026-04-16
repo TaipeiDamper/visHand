@@ -25,6 +25,8 @@ from core.detector import Point3D
 from core.filters import LandmarkFilter
 from config.settings import Settings
 import utils.math_tools as mt
+from core.context import GestureContext
+from core.gestures import registry
 
 
 # ---------------------------------------------------------------------------
@@ -36,16 +38,6 @@ HOVER   = "HOVER"
 ACTIVE  = "ACTIVE"
 
 IDLE          = "IDLE"
-POINT         = "POINT"
-PINCH_HOLD    = "PINCH_HOLD"
-PINCH_DRAG    = "PINCH_DRAG"
-FIST          = "FIST"
-OPEN_PALM     = "OPEN_PALM"
-PALM_ROTATE   = "PALM_ROTATE"
-SNAP_READY    = "SNAP_READY"
-SWIPE_LEFT    = "SWIPE_LEFT"
-SWIPE_RIGHT   = "SWIPE_RIGHT"
-
 EV_NONE        = "NONE"
 EV_SNAP        = "SNAP"
 EV_DOUBLE_TAP  = "DOUBLE_TAP"
@@ -99,9 +91,12 @@ class GestureInterpreter:
         self._no_hand_frames = 0
         self._has_hand_frames += 1
 
+        # Build Context for Evaluators
+        ctx = GestureContext(lm, self.s, self._anchor_history)
+
         # --- Pipeline ---
         event  = self._detect_events(lm, timestamp)
-        intent = self._classify_intent(lm, timestamp)
+        intent = self._classify_intent(ctx)
         logic  = self._update_logic(intent)
 
         anchor, delta, rotation = self._compute_transform(lm, intent)
@@ -124,6 +119,7 @@ class GestureInterpreter:
         """Full state reset — called at construction and when hand is lost."""
         self._logic  = LOCKED
         self._intent = IDLE
+        self._intent_buffer: List[str] = []
 
         self._no_hand_frames  = 0
         self._has_hand_frames = 0
@@ -225,49 +221,47 @@ class GestureInterpreter:
 
     # ── Intent classification ─────────────────────────────────────────────────
 
-    def _classify_intent(self, lm: List[Point3D], timestamp: float) -> str:
+    def _classify_intent(self, ctx: GestureContext) -> str:
         s = self.s
 
         # SNAP_READY has visual priority — let the user see the ready state
         if self._snap_phase == "READY":
-            return SNAP_READY
+            return "SNAP_READY"
 
-        # Finger extension flags
-        index_ext  = mt.finger_is_extended(lm, 1)
-        middle_ext = mt.finger_is_extended(lm, 2)
-        ring_ext   = mt.finger_is_extended(lm, 3)
-        pinky_ext  = mt.finger_is_extended(lm, 4)
-        ext_fingers = [index_ext, middle_ext, ring_ext, pinky_ext]
+        best_intent = IDLE
+        best_score = 0.0
 
-        # Pinch
-        pinch_norm = mt.normalized_distance(lm[mt.THUMB_TIP], lm[mt.INDEX_TIP], lm)
-        is_pinch   = pinch_norm < s.pinch_threshold
+        for g in registry.enabled_intents():
+            score = g.evaluator(ctx)
+            if score > best_score:
+                best_score = score
+                best_intent = g.name
 
-        if is_pinch:
-            vel = mt.instant_velocity(self._anchor_history, 5)
-            return PINCH_DRAG if vel > s.drag_start_velocity else PINCH_HOLD
+        if best_score < s.intent_min_confidence:
+            raw_intent = IDLE
+        else:
+            raw_intent = best_intent
 
-        # Fist — Check curl threshold for the four non-thumb fingers
-        curl_values = [mt.finger_curl(lm, i) for i in range(1, 5)]
-        if all(c > s.fist_curl_threshold for c in curl_values):
-            return FIST
-
-        # Open palm — all four fingers extended
-        if all(ext_fingers):
-            # Check for swipe (fast horizontal motion)
+        # Check for swipe (fast horizontal motion while OPEN_PALM)
+        if raw_intent == "OPEN_PALM":
             vel = mt.instant_velocity(self._anchor_history, 5)
             if vel > s.swipe_velocity_threshold and len(self._anchor_history) >= 3:
                 dx = self._anchor_history[-1][0] - self._anchor_history[-3][0]
                 dy = self._anchor_history[-1][1] - self._anchor_history[-3][1]
                 if abs(dx) > abs(dy):  # horizontal motion dominates
-                    return SWIPE_LEFT if dx < 0 else SWIPE_RIGHT
-            return OPEN_PALM
+                    raw_intent = "SWIPE_LEFT" if dx < 0 else "SWIPE_RIGHT"
 
-        # Point — only index extended
-        if index_ext and not middle_ext and not ring_ext and not pinky_ext:
-            return POINT
+        # --- Debounce Logic ---
+        self._intent_buffer.append(raw_intent)
+        if len(self._intent_buffer) > s.intent_debounce_frames:
+            self._intent_buffer.pop(0)
 
-        return IDLE
+        # ONLY switch if the new intent holds for N frames, otherwise keep previous
+        # We check if all items in buffer are the same 
+        if all(i == raw_intent for i in self._intent_buffer):
+            return raw_intent
+            
+        return self._intent
 
     # ── Logic state machine ───────────────────────────────────────────────────
 
@@ -281,12 +275,12 @@ class GestureInterpreter:
             return LOCKED
 
         if current == HOVER:
-            if intent in (PINCH_HOLD, PINCH_DRAG, FIST):
+            if intent in ("PINCH_HOLD", "PINCH_DRAG", "CLOSED_FIST"):
                 return ACTIVE
             return HOVER
 
         if current == ACTIVE:
-            if intent in (IDLE, OPEN_PALM):
+            if intent in (IDLE, "OPEN_PALM"):
                 return HOVER
             return ACTIVE
 

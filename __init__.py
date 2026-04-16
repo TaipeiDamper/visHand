@@ -12,6 +12,7 @@ Quick start (demo mode):
 from config.settings import Settings
 from core.detector import HandDetector, HandLandmarkResult, Point3D
 from core.interpreter import GestureInterpreter
+from core.gestures import GestureDef, GestureRegistry, registry
 from utils.visualizer import DebugVisualizer
 
 __version__ = "0.1.0"
@@ -19,5 +20,6 @@ __all__ = [
     "Settings",
     "HandDetector", "HandLandmarkResult", "Point3D",
     "GestureInterpreter",
+    "GestureDef", "GestureRegistry", "registry",
     "DebugVisualizer",
 ]

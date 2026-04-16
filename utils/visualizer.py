@@ -24,6 +24,7 @@ from typing import Optional
 import cv2
 import numpy as np
 import mediapipe as mp
+from core.gestures import registry
 
 
 # ── Drawing utilities from MediaPipe ─────────────────────────────────────────
@@ -42,20 +43,6 @@ _CLR = {
     "WHITE":      (240, 240, 240),
     "BLACK":      (  0,   0,   0),
     "DIM":        (160, 160, 160),
-}
-
-# Intent labels shown in the overlay (plain ASCII — OpenCV doesn't render emoji)
-_INTENT_LABELS = {
-    "IDLE":        "IDLE",
-    "POINT":       "POINT          [1 finger]",
-    "PINCH_HOLD":  "PINCH HOLD     [grip still]",
-    "PINCH_DRAG":  "PINCH DRAG     [grip move]",
-    "FIST":        "FIST           [all curl]",
-    "OPEN_PALM":   "OPEN PALM      [all open]",
-    "SNAP_READY":  "** SNAP READY **",
-    "SWIPE_LEFT":  "SWIPE LEFT  <--",
-    "SWIPE_RIGHT": "SWIPE RIGHT -->",
-    "PALM_ROTATE": "PALM ROTATE",
 }
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
@@ -185,7 +172,16 @@ class DebugVisualizer:
         self._text(vis, logic, (18, 42), state_color, scale=0.95, bold=True)
 
         # Intent
-        intent_label = _INTENT_LABELS.get(intent, intent)
+        if intent == "IDLE":
+            intent_label = "IDLE"
+        else:
+            g_def = registry.get(intent)
+            if g_def:
+                # e.g., "CLOSED_FIST"
+                intent_label = f"{g_def.name}"
+            else:
+                intent_label = intent
+
         self._text(vis, intent_label, (18, 72), _CLR["WHITE"], scale=0.52)
 
         # Stable indicator

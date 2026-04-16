@@ -57,3 +57,8 @@ class Settings:
     # ── Output / Debug ────────────────────────────────────────────────────────
     output_mode: str = "library"   # "library" (return dict) | "stdout" (print JSON)
     debug_window: bool = False     # True = open OpenCV window (used by demo.py)
+
+    # ── Intent Engine ─────────────────────────────────────────────────────────
+    intent_min_confidence: float = 0.6     # 最低信心門檻，低於此則為 IDLE
+    intent_debounce_frames: int = 3        # 真實 Intent 必須連續勝出多少幀才切換
+
