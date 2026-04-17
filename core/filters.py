@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import math
 from typing import Optional, List
-from core.detector import Point3D
+import numpy as np
+from core.types import Point3D
 
 
 # ---------------------------------------------------------------------------
@@ -134,25 +135,42 @@ class LandmarkFilter:
 
         self._warmup = settings.stability_warmup_frames
         self._frame_count = 0
+        self._freq = max(freq, 1.0)
+        self._min_cutoff = float(mc)
+        self._beta = float(beta)
+        self._d_cutoff = float(dc)
 
-        # 21 landmarks × 3 axes (x, y, z)
-        self._filters: List[List[OneEuroFilter]] = [
-            [OneEuroFilter(freq, mc, beta, dc) for _ in range(3)]
-            for _ in range(21)
-        ]
+        self._x_last: Optional[np.ndarray] = None
+        self._dx_last: Optional[np.ndarray] = None
+        self._last_time: Optional[float] = None
 
     # ── Public API ───────────────────────────────────────────────────────────
 
     def apply(self, landmarks: List[Point3D], timestamp: float) -> List[Point3D]:
         """Return a new list of smoothed Point3D objects."""
         self._frame_count += 1
-        result = []
-        for i, lm in enumerate(landmarks):
-            sx = self._filters[i][0](lm.x, timestamp)
-            sy = self._filters[i][1](lm.y, timestamp)
-            sz = self._filters[i][2](lm.z, timestamp)
-            result.append(Point3D(sx, sy, sz))
-        return result
+        arr = np.array([[lm.x, lm.y, lm.z] for lm in landmarks], dtype=np.float64)
+
+        if self._last_time is not None:
+            dt = timestamp - self._last_time
+            if dt > 1e-6:
+                self._freq = 1.0 / dt
+        self._last_time = timestamp
+
+        if self._x_last is None:
+            self._x_last = arr.copy()
+            self._dx_last = np.zeros_like(arr)
+            return [Point3D(float(x), float(y), float(z)) for x, y, z in arr]
+
+        dx = (arr - self._x_last) * self._freq
+        alpha_d = self._alpha(self._d_cutoff)
+        self._dx_last = alpha_d * dx + (1.0 - alpha_d) * self._dx_last
+
+        cutoff = self._min_cutoff + self._beta * np.abs(self._dx_last)
+        alpha_x = self._alpha(cutoff)
+        self._x_last = alpha_x * arr + (1.0 - alpha_x) * self._x_last
+        out = self._x_last
+        return [Point3D(float(x), float(y), float(z)) for x, y, z in out]
 
     @property
     def is_stable(self) -> bool:
@@ -162,6 +180,12 @@ class LandmarkFilter:
     def reset(self):
         """Reset all filters (call when hand disappears from frame)."""
         self._frame_count = 0
-        for axes in self._filters:
-            for f in axes:
-                f.reset()
+        self._x_last = None
+        self._dx_last = None
+        self._last_time = None
+
+    def _alpha(self, cutoff):
+        cutoff_arr = np.asarray(cutoff, dtype=np.float64)
+        tau = 1.0 / (2.0 * math.pi * np.maximum(cutoff_arr, 1e-6))
+        te = 1.0 / max(self._freq, 1e-6)
+        return 1.0 / (1.0 + tau / te)

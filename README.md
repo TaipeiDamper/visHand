@@ -39,63 +39,14 @@ python examples/basic_test.py | python my_consumer.py
 
 ---
 
-## Output Format
+## Documentation Map
 
-Every frame produces one JSON object:
+為了避免重複文件與版本漂移，文件責任如下：
 
-```json
-{
-  "header": {
-    "frame_id": 1024,
-    "timestamp": 1713123456.78,
-    "hand_side": "RIGHT"
-  },
-  "state": {
-    "logic":     "ACTIVE",       // LOCKED | HOVER | ACTIVE
-    "intent":    "PINCH_DRAG",   // see Intent table below
-    "is_stable": true            // false during 1€ filter warmup
-  },
-  "transform": {
-    "anchor": { "x": 0.512, "y": 0.489, "z": -0.052 },
-    "delta":  { "dx": 0.002, "dy": -0.001 },
-    "rotation": 15.5
-  },
-  "dynamics": {
-    "intensity": 0.98,
-    "velocity":  0.015,
-    "event":     "NONE"          // NONE | SNAP | DOUBLE_TAP | CLAP
-  }
-}
-```
-
-### Logic States
-
-| State | Meaning |
-|-------|---------|
-| `LOCKED` | No hand detected |
-| `HOVER` | Hand visible, no active gesture |
-| `ACTIVE` | Active gesture in progress |
-
-### Intents
-
-| Intent | Trigger |
-|--------|---------|
-| `IDLE` | Hand present, no gesture |
-| `POINT` | Index finger extended, rest curled |
-| `PINCH_HOLD` | Thumb + index close, static |
-| `PINCH_DRAG` | Thumb + index close, moving |
-| `FIST` | All fingers curled |
-| `OPEN_PALM` | All fingers extended |
-| `SNAP_READY` | Middle + thumb in contact (pre-snap) |
-| `SWIPE_LEFT` | Fast lateral motion leftward |
-| `SWIPE_RIGHT` | Fast lateral motion rightward |
-
-### Events (one-shot, in `dynamics.event`)
-
-| Event | Trigger |
-|-------|---------|
-| `SNAP` | Middle finger snaps away from thumb (two-phase) |
-| `DOUBLE_TAP` | Two pinch onsets within `double_tap_window_ms` |
+- `bridge/INTEGRATION_CONTRACT.md`：外部系統對接契約（唯一來源，含必需欄位與相容規則）
+- `bridge/README.md`：Bridge 模組用途與檔案入口
+- `ARCHITECTURE_FLOW.md`：內部架構與資料流
+- `CHANGELOG.md`：開發歷程與歷史變更記錄
 
 ---
 
@@ -143,38 +94,43 @@ s = Settings(
     camera_index=1,          # external webcam
     pinch_threshold=0.18,    # tighter pinch required
     snap_cooldown_ms=400,    # faster snap repeat
+    bridge_transport="ws",   # stdout | ws | pipe
+    bridge_enable_extended_transform=True,  # add dz/rotation_euler/dt_ms
+    bridge_enable_event_phase=True,         # add dynamics.event_phase
+    bridge_enable_hand_identity=True,       # add header.hand_id
 )
 ```
 
 Key thresholds are **normalised by palm width**, so they work at any
 distance from the camera.
 
+For bridge payload compatibility details, refer to `bridge/INTEGRATION_CONTRACT.md`.
+
 ---
 
-## Project Structure
+## Project Structure (Current)
 
 ```
 visHand/
+├── bridge/
+│   ├── INTEGRATION_CONTRACT.md # 外部對接契約（SSOT）
+│   ├── schema_v1.py            # payload schema 規則
+│   ├── transport.py            # stdout/ws/pipe transport 抽象
+│   └── factory.py              # transport 工廠
 ├── core/
-│   ├── detector.py      # MediaPipe wrapper, 21-point extraction
-│   ├── filters.py       # 1 Euro Filter + LandmarkFilter
-│   └── interpreter.py   # State machine, intent + event detection
+│   ├── detector.py      # facade
+│   ├── capture.py       # camera capture worker
+│   ├── inference.py     # inference worker + ROI + quality gate
+│   ├── interpreter.py   # state machine + intent/event
+│   └── ...              # gestures / arm_assist / safety / types
 ├── utils/
-│   ├── math_tools.py    # Pure geometry (distances, angles, velocity)
-│   └── visualizer.py    # OpenCV skeleton + overlay drawing
+│   ├── math_tools.py
+│   ├── visualizer.py
+│   └── profiler.py
 ├── config/
-│   └── settings.py      # All thresholds and options
+│   └── settings.py
 ├── examples/
-│   └── basic_test.py    # stdout JSON stream for piping
-├── demo.py              # Live visual debug demo
+│   └── ...              # calibration / validation tools
+├── demo.py
 └── requirements.txt
 ```
-
----
-
-## Extending to Dual-Hand
-
-Set `max_hands=2` in Settings and instantiate two `GestureInterpreter` objects
-(one per hand).  The `demo.py` already scaffolds this with a list of interpreters.
-Dual-hand events like `CLAP` and `PINCH_ROTATE` can be added in a higher-level
-coordinator that receives both payload dicts.

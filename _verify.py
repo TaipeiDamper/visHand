@@ -4,7 +4,7 @@ import sys, os, math, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import Settings
-from core.detector import Point3D
+from core.types import Point3D
 from core.filters import OneEuroFilter, LandmarkFilter
 from core.interpreter import GestureInterpreter
 from utils.math_tools import palm_width, palm_roll_angle

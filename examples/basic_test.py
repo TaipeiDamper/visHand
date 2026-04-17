@@ -64,10 +64,10 @@ def main():
             if results:
                 result  = results[0]
                 payload = interpreter.process(
-                    result.landmarks, result.hand_side, timestamp, frame_id
+                    result.landmarks, result.hand_side, timestamp, frame_id, hand_id=result.track_id
                 )
             else:
-                payload = interpreter.process(None, "RIGHT", timestamp, frame_id)
+                payload = interpreter.process(None, "RIGHT", timestamp, frame_id, hand_id="slot-0")
 
             # Write one JSON line to stdout (flush so pipe consumers see it immediately)
             print(json.dumps(payload, ensure_ascii=False), flush=True)

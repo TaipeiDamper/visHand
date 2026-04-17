@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from typing import List, Tuple, Optional
 
-from core.detector import Point3D
+from core.types import Point3D
 
 # ---------------------------------------------------------------------------
 # Landmark index constants (import these everywhere instead of magic numbers)
@@ -67,6 +67,47 @@ def normalized_distance(p1: Point3D, p2: Point3D, lm: List[Point3D]) -> float:
     if ref < 1e-6:
         return 0.0
     return euclidean_3d(p1, p2) / ref
+
+
+def _clamp01(v: float) -> float:
+    return max(0.0, min(1.0, float(v)))
+
+
+def pinch_contact_score(lm: List[Point3D], pinch_threshold: float = 0.20) -> float:
+    """
+    Estimate how likely thumb/index are in a stable pinch contact.
+    Score in [0, 1], combining:
+      - normalized tip distance
+      - z consistency between tips
+      - thumb/index tip direction opposition
+    """
+    dist = normalized_distance(lm[THUMB_TIP], lm[INDEX_TIP], lm)
+    dist_score = _clamp01(1.0 - (dist / max(pinch_threshold, 1e-6)))
+
+    z_gap = abs(float(lm[THUMB_TIP].z) - float(lm[INDEX_TIP].z))
+    z_score = _clamp01(1.0 - (z_gap / 0.12))
+
+    tv = (
+        float(lm[THUMB_TIP].x - lm[THUMB_IP].x),
+        float(lm[THUMB_TIP].y - lm[THUMB_IP].y),
+        float(lm[THUMB_TIP].z - lm[THUMB_IP].z),
+    )
+    iv = (
+        float(lm[INDEX_TIP].x - lm[INDEX_DIP].x),
+        float(lm[INDEX_TIP].y - lm[INDEX_DIP].y),
+        float(lm[INDEX_TIP].z - lm[INDEX_DIP].z),
+    )
+    tn = math.sqrt(tv[0] * tv[0] + tv[1] * tv[1] + tv[2] * tv[2])
+    inn = math.sqrt(iv[0] * iv[0] + iv[1] * iv[1] + iv[2] * iv[2])
+    if tn < 1e-6 or inn < 1e-6:
+        dir_score = 0.5
+    else:
+        cosang = (tv[0] * iv[0] + tv[1] * iv[1] + tv[2] * iv[2]) / (tn * inn)
+        cosang = max(-1.0, min(1.0, cosang))
+        # Opposite directions indicate facing tips in contact.
+        dir_score = _clamp01((1.0 - cosang) * 0.5)
+
+    return _clamp01((0.60 * dist_score) + (0.25 * z_score) + (0.15 * dir_score))
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +219,21 @@ def palm_roll_angle(lm: List[Point3D]) -> float:
     dy = lm[PINKY_MCP].y - lm[INDEX_MCP].y
     return math.degrees(math.atan2(dy, dx))
 
+def palm_euler_angles(lm: List[Point3D]) -> Tuple[float, float, float]:
+    """
+    Approximate palm orientation in degrees.
+    Returns (roll, pitch, yaw) in camera-normalized coordinates.
+    """
+    roll = palm_roll_angle(lm)
+    wrist = lm[WRIST]
+    middle = lm[MIDDLE_MCP]
+    dz = float(middle.z - wrist.z)
+    dy = float(middle.y - wrist.y)
+    dx = float(middle.x - wrist.x)
+    pitch = math.degrees(math.atan2(dz, abs(dy) + 1e-6))
+    yaw = math.degrees(math.atan2(dx, abs(dy) + 1e-6))
+    return roll, pitch, yaw
+
 
 # ---------------------------------------------------------------------------
 # Motion utilities
@@ -208,3 +264,11 @@ def compute_delta(
     if prev is None:
         return 0.0, 0.0
     return curr[0] - prev[0], curr[1] - prev[1]
+
+def compute_delta3d(
+    prev: Optional[Tuple[float, float, float]],
+    curr: Tuple[float, float, float],
+) -> Tuple[float, float, float]:
+    if prev is None:
+        return 0.0, 0.0, 0.0
+    return curr[0] - prev[0], curr[1] - prev[1], curr[2] - prev[2]

@@ -1,0 +1,2 @@
+{"timestamp": 1.0, "frame_id": 1, "pred_intent": "OPEN_PALM", "pred_event": "NONE", "landmarks": [], "arbitration": [{"name": "OPEN_PALM", "score": 0.9, "group": "pose_base"}, {"name": "POINTING_UP", "score": 0.82, "group": "pointing"}]}
+{"timestamp": 1.1, "frame_id": 2, "pred_intent": "OPEN_PALM", "pred_event": "NONE", "landmarks": [], "arbitration": [{"name": "OPEN_PALM", "score": 0.91, "group": "pose_base"}]}

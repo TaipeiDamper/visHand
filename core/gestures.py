@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Callable
 from core.context import GestureContext
+import utils.math_tools as mt
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -38,6 +39,11 @@ class GestureDef:
 
     # 狀態評估器：給定 GestureContext，回傳信心指數 (0.0 ~ 1.0)
     evaluator: Optional[Callable[[GestureContext], float]] = None
+    risk_level: str = "medium"        # "low" | "medium" | "high"
+    mutex_group: str = "pose"         # 同組手勢只允許一個勝出
+    cooldown_ms: float = 0.0
+    arm_assist_allowed: bool = False
+    arm_assist_weight: float = 0.0
 
     # ── 複合動作專用欄位 ──────────────────────────────────────────────────
     sub_gestures: List[str] = field(default_factory=list)
@@ -101,20 +107,64 @@ def _eval_pinch_hold(ctx: GestureContext) -> float:
     dist = ctx.pinch_distance
     if dist < ctx.settings.pinch_threshold:
         if ctx.velocity <= ctx.settings.drag_start_velocity:
-            return 1.0 - (dist / ctx.settings.pinch_threshold) # 捏越緊分數越高
+            base = 1.0 - (dist / ctx.settings.pinch_threshold) # 捏越緊分數越高
+            return max(0.0, min(1.0, base * ctx.contact_score))
     return 0.0
 
 def _eval_pinch_drag(ctx: GestureContext) -> float:
     dist = ctx.pinch_distance
     if dist < ctx.settings.pinch_threshold:
         if ctx.velocity > ctx.settings.drag_start_velocity:
-            return 1.0 - (dist / ctx.settings.pinch_threshold)
+            base = 1.0 - (dist / ctx.settings.pinch_threshold)
+            return max(0.0, min(1.0, base * ctx.contact_score))
     return 0.0
 
 def _eval_snap_ready(ctx: GestureContext) -> float:
     dist = ctx.snap_ready_distance
     if dist < ctx.settings.snap_ready_threshold:
         return 1.0
+    return 0.0
+
+
+def _eval_ok_sign(ctx: GestureContext) -> float:
+    dist = ctx.pinch_distance
+    ext = ctx.ext_array
+    if dist < ctx.settings.ok_sign_threshold and ext[2] and ext[3] and ext[4]:
+        return max(0.0, 1.0 - (dist / max(ctx.settings.ok_sign_threshold, 1e-6)))
+    return 0.0
+
+
+def _eval_index_point_left(ctx: GestureContext) -> float:
+    ext = ctx.ext_array
+    if ext[1] and not ext[2] and not ext[3] and not ext[4]:
+        dx = ctx.lm[mt.INDEX_TIP].x - ctx.lm[mt.INDEX_MCP].x
+        if dx < -ctx.settings.index_point_lateral_threshold:
+            return min(1.0, abs(dx) / max(ctx.settings.index_point_lateral_threshold * 2.0, 1e-6))
+    return 0.0
+
+
+def _eval_index_point_right(ctx: GestureContext) -> float:
+    ext = ctx.ext_array
+    if ext[1] and not ext[2] and not ext[3] and not ext[4]:
+        dx = ctx.lm[mt.INDEX_TIP].x - ctx.lm[mt.INDEX_MCP].x
+        if dx > ctx.settings.index_point_lateral_threshold:
+            return min(1.0, abs(dx) / max(ctx.settings.index_point_lateral_threshold * 2.0, 1e-6))
+    return 0.0
+
+
+def _eval_palm_tilt_left(ctx: GestureContext) -> float:
+    angle = mt.palm_roll_angle(ctx.lm)
+    th = ctx.settings.palm_tilt_angle_threshold_deg
+    if angle < -th:
+        return min(1.0, abs(angle) / max(th * 2.0, 1e-6))
+    return 0.0
+
+
+def _eval_palm_tilt_right(ctx: GestureContext) -> float:
+    angle = mt.palm_roll_angle(ctx.lm)
+    th = ctx.settings.palm_tilt_angle_threshold_deg
+    if angle > th:
+        return min(1.0, abs(angle) / max(th * 2.0, 1e-6))
     return 0.0
 
 
@@ -130,7 +180,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="五指完全握緊成拳頭",
         suggested_usage="切換模式 / 停止",
         priority=50,
-        evaluator=_eval_fist
+        evaluator=_eval_fist,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
     GestureDef(
         name="OPEN_PALM",
@@ -139,7 +191,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="五指完全展開、手掌攤平",
         suggested_usage="重置 / 釋放",
         priority=50,
-        evaluator=_eval_open_palm
+        evaluator=_eval_open_palm,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
     GestureDef(
         name="POINTING_UP",
@@ -148,7 +202,11 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="僅食指向上伸直",
         suggested_usage="導航 / Hover",
         priority=60,
-        evaluator=_eval_pointing_up
+        evaluator=_eval_pointing_up,
+        risk_level="medium",
+        mutex_group="pointing",
+        arm_assist_allowed=True,
+        arm_assist_weight=0.12,
     ),
     GestureDef(
         name="THUMB_UP",
@@ -157,7 +215,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="大拇指朝上，其餘手指握拳",
         suggested_usage="確認 / 增加",
         priority=60,
-        evaluator=_eval_thumb_up
+        evaluator=_eval_thumb_up,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
     GestureDef(
         name="THUMB_DOWN",
@@ -166,7 +226,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="大拇指朝下，其餘手指握拳",
         suggested_usage="取消 / 減少",
         priority=60,
-        evaluator=_eval_thumb_down
+        evaluator=_eval_thumb_down,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
     GestureDef(
         name="VICTORY",
@@ -175,7 +237,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="食指與中指 V 字張開",
         suggested_usage="二選一切換",
         priority=70,
-        evaluator=_eval_victory
+        evaluator=_eval_victory,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
     GestureDef(
         name="I_LOVE_YOU",
@@ -184,7 +248,9 @@ MEDIAPIPE_GESTURES: List[GestureDef] = [
         description="大拇指、食指、小指伸直",
         suggested_usage="自定義魔法動作",
         priority=70,
-        evaluator=_eval_iloveyou
+        evaluator=_eval_iloveyou,
+        risk_level="medium",
+        mutex_group="pose_base",
     ),
 ]
 
@@ -201,7 +267,9 @@ CUSTOM_GESTURES: List[GestureDef] = [
         description="拇指尖與食指尖靠近（靜止狀態）",
         suggested_usage="精確控制的起點",
         priority=90,  # 捏合判斷優先順序高於指向
-        evaluator=_eval_pinch_hold
+        evaluator=_eval_pinch_hold,
+        risk_level="medium",
+        mutex_group="pinch_family",
     ),
     GestureDef(
         name="PINCH_DRAG",
@@ -210,7 +278,9 @@ CUSTOM_GESTURES: List[GestureDef] = [
         description="拇指尖與食指尖捏住並移動",
         suggested_usage="拖曳物件",
         priority=100, # 動態操作最優先判定
-        evaluator=_eval_pinch_drag
+        evaluator=_eval_pinch_drag,
+        risk_level="medium",
+        mutex_group="pinch_family",
     ),
     GestureDef(
         name="SNAP_READY",
@@ -219,7 +289,69 @@ CUSTOM_GESTURES: List[GestureDef] = [
         description="中指與拇指靠在一起",
         suggested_usage="預告即將觸發的動作",
         priority=110, # 最優先視覺反饋
-        evaluator=_eval_snap_ready
+        evaluator=_eval_snap_ready,
+        risk_level="high",
+        mutex_group="event_ready",
+        cooldown_ms=80.0,
+    ),
+    GestureDef(
+        name="OK_SIGN",
+        display_name="OK",
+        category="custom",
+        description="拇指與食指形成圈，其他手指伸展",
+        suggested_usage="確定 / 接受",
+        priority=88,
+        evaluator=_eval_ok_sign,
+        risk_level="low",
+        mutex_group="pinch_family",
+    ),
+    GestureDef(
+        name="INDEX_POINT_LEFT",
+        display_name="食指向左",
+        category="custom",
+        description="食指伸直且朝左指向",
+        suggested_usage="左向導航",
+        priority=82,
+        evaluator=_eval_index_point_left,
+        risk_level="low",
+        mutex_group="pointing",
+        arm_assist_allowed=True,
+        arm_assist_weight=0.22,
+    ),
+    GestureDef(
+        name="INDEX_POINT_RIGHT",
+        display_name="食指向右",
+        category="custom",
+        description="食指伸直且朝右指向",
+        suggested_usage="右向導航",
+        priority=82,
+        evaluator=_eval_index_point_right,
+        risk_level="low",
+        mutex_group="pointing",
+        arm_assist_allowed=True,
+        arm_assist_weight=0.22,
+    ),
+    GestureDef(
+        name="PALM_TILT_LEFT",
+        display_name="手掌左傾",
+        category="custom",
+        description="手掌roll角度朝左側偏轉",
+        suggested_usage="微調旋轉",
+        priority=78,
+        evaluator=_eval_palm_tilt_left,
+        risk_level="low",
+        mutex_group="tilt",
+    ),
+    GestureDef(
+        name="PALM_TILT_RIGHT",
+        display_name="手掌右傾",
+        category="custom",
+        description="手掌roll角度朝右側偏轉",
+        suggested_usage="微調旋轉",
+        priority=78,
+        evaluator=_eval_palm_tilt_right,
+        risk_level="low",
+        mutex_group="tilt",
     ),
 ]
 
@@ -238,6 +370,9 @@ COMPOSITE_GESTURES: List[GestureDef] = [
         sub_gestures=["SNAP_READY"],
         composite_type="sequence",
         composite_params={"cooldown_ms": 100},
+        risk_level="high",
+        mutex_group="event",
+        cooldown_ms=100.0,
     ),
     GestureDef(
         name="DOUBLE_TAP",
@@ -248,6 +383,9 @@ COMPOSITE_GESTURES: List[GestureDef] = [
         sub_gestures=["PINCH_HOLD", "PINCH_HOLD"],
         composite_type="sequence",
         composite_params={"timeout_ms": 350},
+        risk_level="high",
+        mutex_group="event",
+        cooldown_ms=250.0,
     ),
     GestureDef(
         name="SWIPE_LEFT",
@@ -258,6 +396,11 @@ COMPOSITE_GESTURES: List[GestureDef] = [
         sub_gestures=["OPEN_PALM"],
         composite_type="velocity",
         composite_params={"velocity_min": 0.04, "direction": "left"},
+        risk_level="high",
+        mutex_group="event",
+        cooldown_ms=180.0,
+        arm_assist_allowed=True,
+        arm_assist_weight=0.18,
     ),
     GestureDef(
         name="SWIPE_RIGHT",
@@ -268,6 +411,11 @@ COMPOSITE_GESTURES: List[GestureDef] = [
         sub_gestures=["OPEN_PALM"],
         composite_type="velocity",
         composite_params={"velocity_min": 0.04, "direction": "right"},
+        risk_level="high",
+        mutex_group="event",
+        cooldown_ms=180.0,
+        arm_assist_allowed=True,
+        arm_assist_weight=0.18,
     ),
 ]
 
@@ -298,6 +446,10 @@ class GestureRegistry:
         intents = [g for g in self._gestures.values() if g.enabled and g.evaluator is not None]
         intents.sort(key=lambda g: g.priority, reverse=True)
         return intents
+
+    def event_defs(self) -> List[GestureDef]:
+        events = [g for g in self._gestures.values() if g.category == "composite" and g.enabled]
+        return events
 
     def set_enabled(self, name: str, enabled: bool) -> None:
         g = self._gestures.get(name)
