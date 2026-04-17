@@ -66,22 +66,35 @@ class TasksHandsBackend:
         if not os.path.exists(model_path):
             raise RuntimeError(f"HandLandmarker model not found: {model_path}")
 
+        # Windows GPU Support is tricky; try GPU if requested, fallback to CPU
         delegate = base_options_cls.Delegate.CPU
         if settings.use_gpu_delegate:
             delegate = base_options_cls.Delegate.GPU
 
-        base_options = base_options_cls(
-            model_asset_path=model_path,
-            delegate=delegate,
-        )
-        options = vision.HandLandmarkerOptions(
-            base_options=base_options,
-            num_hands=max_hands,
-            min_hand_detection_confidence=settings.min_detection_confidence,
-            min_hand_presence_confidence=settings.min_tracking_confidence,
-            min_tracking_confidence=settings.min_tracking_confidence,
-        )
-        self._landmarker = vision.HandLandmarker.create_from_options(options)
+        try:
+            base_options = base_options_cls(model_asset_path=model_path, delegate=delegate)
+            options = vision.HandLandmarkerOptions(
+                base_options=base_options,
+                num_hands=max_hands,
+                min_hand_detection_confidence=settings.min_detection_confidence,
+                min_hand_presence_confidence=settings.min_tracking_confidence,
+                min_tracking_confidence=settings.min_tracking_confidence,
+            )
+            self._landmarker = vision.HandLandmarker.create_from_options(options)
+        except Exception as e:
+            if delegate == base_options_cls.Delegate.GPU:
+                # Retry with CPU
+                base_options = base_options_cls(model_asset_path=model_path, delegate=base_options_cls.Delegate.CPU)
+                options = vision.HandLandmarkerOptions(
+                    base_options=base_options,
+                    num_hands=max_hands,
+                    min_hand_detection_confidence=settings.min_detection_confidence,
+                    min_hand_presence_confidence=settings.min_tracking_confidence,
+                    min_tracking_confidence=settings.min_tracking_confidence,
+                )
+                self._landmarker = vision.HandLandmarker.create_from_options(options)
+            else:
+                raise e
 
     def detect(self, frame_bgr: np.ndarray) -> Optional[List[HandLandmarkResult]]:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)

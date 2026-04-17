@@ -38,6 +38,7 @@ class InferenceWorker:
         self._hands_peak_hold = 0
         self._runtime_hint = {"logic": "LOCKED", "intent": "IDLE", "velocity": 0.0}
         self._slot_refs: List[Optional[Dict[str, float]]] = [None for _ in range(max(1, int(settings.max_hands)))]
+        self._last_quality_cached = self._quality_gate.evaluate(np.zeros((64, 64, 3), dtype=np.uint8))
 
     def run(self, stop_event: threading.Event):
         while not stop_event.is_set():
@@ -68,7 +69,9 @@ class InferenceWorker:
             mode = "GLOBAL"
             target_frame = frame_pkt.frame
             remap_meta = None
-            quality = self._quality_gate.evaluate(frame_pkt.frame)
+            quality = self._last_quality_cached if frame_pkt.frame_id % 4 != 0 else self._quality_gate.evaluate(frame_pkt.frame)
+            self._last_quality_cached = quality
+
             if self.settings.enable_roi_tracking and self.settings.max_hands == 1 and self._tracking_anchor is not None:
                 roi = self._compute_roi(frame_pkt.frame.shape[:2], self._tracking_anchor)
                 if roi is not None:

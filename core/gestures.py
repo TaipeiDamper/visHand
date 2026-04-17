@@ -184,7 +184,35 @@ def _eval_number_4(ctx: GestureContext) -> float:
     return 1.0 if ctx.predicted_ml_label == "4" else 0.0
 
 def _eval_number_5(ctx: GestureContext) -> float:
-    return 1.0 if ctx.predicted_ml_label == "5" else 0.0
+    # Check for both "5" (from standard) and "NUMBER_5" (from isolation) labels
+    return 1.0 if ctx.predicted_ml_label in ("5", "NUMBER_5") else 0.0
+
+def _eval_snap_prep(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "SNAP_PREP" else 0.0
+
+def _eval_snap_action(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "SNAP_ACTION" else 0.0
+
+def _eval_cross_fingers_single(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "CROSS_FINGERS_SINGLE" else 0.0
+
+def _eval_cross_fingers_multi(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "CROSS_FINGERS_MULTI" else 0.0
+
+def _eval_cross_palms(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "CROSS_PALMS" else 0.0
+
+def _eval_grip_fist(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "GRIP_FIST_IN_HAND" else 0.0
+
+def _eval_grip_interlocked(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "GRIP_INTERLOCKED" else 0.0
+
+def _eval_prayer(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "PRAYER" else 0.0
+
+def _eval_clap_slow(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "CLAP_SLOW" else 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -460,6 +488,105 @@ CUSTOM_GESTURES: List[GestureDef] = [
         risk_level="low",
         mutex_group="pose_base",
     ),
+    GestureDef(
+        name="SNAP_PREP",
+        display_name="響指預備 [ML]",
+        category="custom",
+        description="響指發力前動作",
+        suggested_usage="響指預備",
+        priority=120,
+        evaluator=_eval_snap_prep,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="SNAP_ACTION",
+        display_name="響指動作 [ML]",
+        category="custom",
+        description="響指發力後動作",
+        suggested_usage="響指觸發",
+        priority=120,
+        evaluator=_eval_snap_action,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="CROSS_FINGERS_SINGLE",
+        display_name="單指交叉 [ML]",
+        category="custom",
+        description="食指交叉動作",
+        suggested_usage="交叉 (單指)",
+        priority=120,
+        evaluator=_eval_cross_fingers_single,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="CROSS_FINGERS_MULTI",
+        display_name="多指交叉 [ML]",
+        category="custom",
+        description="多手指互相交錯",
+        suggested_usage="交叉 (多指)",
+        priority=120,
+        evaluator=_eval_cross_fingers_multi,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="CROSS_PALMS",
+        display_name="手掌交叉 [ML]",
+        category="custom",
+        description="兩手掌重疊交叉",
+        suggested_usage="交叉 (全掌)",
+        priority=120,
+        evaluator=_eval_cross_palms,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="GRIP_FIST_IN_HAND",
+        display_name="抱拳握住 [ML]",
+        category="custom",
+        description="一手握拳一手握住",
+        suggested_usage="抱拳",
+        priority=120,
+        evaluator=_eval_grip_fist,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="GRIP_INTERLOCKED",
+        display_name="相互握住 [ML]",
+        category="custom",
+        description="雙手手指或掌心互扣",
+        suggested_usage="互鎖",
+        priority=120,
+        evaluator=_eval_grip_interlocked,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="PRAYER",
+        display_name="合掌 [ML]",
+        category="custom",
+        description="雙手合十",
+        suggested_usage="合掌",
+        priority=120,
+        evaluator=_eval_prayer,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="CLAP_SLOW",
+        display_name="慢鼓掌 [ML]",
+        category="custom",
+        description="模擬鼓掌貼合動作",
+        suggested_usage="鼓掌 (準備)",
+        priority=120,
+        evaluator=_eval_clap_slow,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
 ]
 
 
@@ -470,13 +597,13 @@ CUSTOM_GESTURES: List[GestureDef] = [
 COMPOSITE_GESTURES: List[GestureDef] = [
     GestureDef(
         name="SNAP",
-        display_name="彈指",
+        display_name="打響指",
         category="composite",
-        description="中指與拇指接觸後快速彈開",
-        suggested_usage="觸發一次性事件",
-        sub_gestures=["SNAP_READY"],
+        description="大拇指與中指迅速摩擦彈開",
+        suggested_usage="觸發特定功能",
+        sub_gestures=["SNAP_PREP", "SNAP_ACTION"],
         composite_type="sequence",
-        composite_params={"cooldown_ms": 100},
+        composite_params={"timeout_ms": 400},
         risk_level="high",
         mutex_group="event",
         cooldown_ms=100.0,

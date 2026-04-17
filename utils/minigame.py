@@ -178,14 +178,14 @@ class Minigame:
         self.curr_fist_sides = new_fist_sides
 
     def _spawn_objects(self, timestamp, w, h):
-        interval = 1.25 if len(self.boxes) < 10 else 1.6
+        if len(self.boxes) >= 15:
+            return
+        interval = 1.4 if len(self.boxes) < 8 else 2.0
         if timestamp - self.last_spawn > interval:
             self.boxes.append(FallingObject(w, h))
-            if random.random() < 0.18:
-                self.boxes.append(FallingObject(w, h))
             self.last_spawn = timestamp
 
-    def _apply_gesture_forces(self, payloads, valid_indices, timestamp, w, h):
+    def _apply_gesture_forces(self, vis, payloads, valid_indices, timestamp, w, h):
         for idx in valid_indices:
             payload = payloads[idx]
             side = payload["header"]["hand_side"]
@@ -195,17 +195,20 @@ class Minigame:
 
             if event == "SNAP" and timestamp > self.snap_cooldown_until:
                 self.snap_cooldown_until = timestamp + 0.1
-                last_fist_time = self.recent_fist_sides.get(side, 0.0)
-                if timestamp - last_fist_time < 0.8:
-                    for box in self.boxes:
-                        rx, ry = box.x - ax, box.y - ay
-                        dist = max(1.0, (rx * rx + ry * ry) ** 0.5)
-                        power = min(85.0, 3600.0 / dist)
-                        box.vx += (rx / dist) * power / box.mass
-                        box.vy += (ry / dist) * power / box.mass
-                        box.angular_v += random.uniform(-0.2, 0.2)
-                else:
-                    self.boxes.clear()
+                # Restore: Clear all boxes on snap
+                self.boxes.clear()
+                # Visual feedback
+                cv2.circle(vis, (int(ax), int(ay)), 160, (255, 255, 255), 4)
+                continue
+
+            if intent == "CLAP_SLOW":
+                # Clapping creates an attraction wave
+                for box in self.boxes:
+                    rx, ry = ax - box.x, ay - box.y
+                    dist = max(20.0, (rx * rx + ry * ry) ** 0.5)
+                    pull = min(15.0, 1000.0 / dist)
+                    box.vx += (rx / dist) * pull / box.mass
+                    box.vy += (ry / dist) * pull / box.mass
                 continue
 
             for box in self.boxes:
@@ -245,19 +248,26 @@ class Minigame:
             if not lm:
                 continue
 
+            # Performance Optimization: Only check 5 fingertips + wrist instead of 21 points
+            # Indices: 0(wrist), 4(thumb), 8(index), 12(middle), 16(ring), 20(pinky)
+            check_indices = [0, 4, 8, 12, 16, 20]
+            
             hand_dx = payloads[idx]["transform"]["delta"]["dx"] * w * 0.7
             hand_dy = payloads[idx]["transform"]["delta"]["dy"] * h * 0.7
 
-            for point in lm.landmark:
+            for i in check_indices:
+                point = lm.landmark[i]
                 px, py = point.x * w, point.y * h
                 dx, dy = box.x - px, box.y - py
-                dist = max(0.1, (dx * dx + dy * dy) ** 0.5)
-                if dist < (box.radius + 10):
+                dist_sq = dx * dx + dy * dy
+                radius_sum = box.radius + 12
+                if dist_sq < (radius_sum * radius_sum):
+                    dist = dist_sq ** 0.5 if dist_sq > 0 else 0.1
                     nx, ny = dx / dist, dy / dist
-                    impulse = 22.0
+                    impulse = 24.0
                     box.vx = nx * impulse + hand_dx
-                    box.vy = ny * impulse - 9.0 + hand_dy
-                    box.angular_v += random.uniform(-0.15, 0.15)
+                    box.vy = ny * impulse - 10.0 + hand_dy
+                    box.angular_v += random.uniform(-0.2, 0.2)
                     if not box.hit:
                         self.score += 1
                     box.hit = True
@@ -350,7 +360,7 @@ class Minigame:
 
         self._refresh_hand_states(payloads, valid_indices, timestamp)
         self._spawn_objects(timestamp, w, h)
-        self._apply_gesture_forces(payloads, valid_indices, timestamp, w, h)
+        self._apply_gesture_forces(vis, payloads, valid_indices, timestamp, w, h)
 
         for box in self.boxes:
             if not box.active:

@@ -174,7 +174,7 @@ class DebugVisualizer:
             
         cv2.addWeighted(overlay, 0.55, vis, 0.45, 0, vis)
         
-        # Number mapping including directional variants
+        # Number mapping including directional variants and hard series
         _NUM_MAP = {
             "CLOSED_FIST": "0 (FIST)",
             "POINTING_UP": "1 (POINT)",
@@ -186,6 +186,16 @@ class DebugVisualizer:
             "OPEN_PALM": "5 (PALM)",
             "PALM_TILT_LEFT": "5 (PALM)",
             "PALM_TILT_RIGHT": "5 (PALM)",
+            # Hard Series mapping
+            "SNAP_PREP": "SNAP [PREP]",
+            "SNAP_ACTION": "SNAP [FIRE!]",
+            "CROSS_FINGERS_SINGLE": "CROSS [SINGLE]",
+            "CROSS_FINGERS_MULTI": "CROSS [MULTI]",
+            "CROSS_PALMS": "CROSS [PALMS]",
+            "GRIP_FIST_IN_HAND": "GRIP [FIST]",
+            "GRIP_INTERLOCKED": "GRIP [LOCK]",
+            "PRAYER": "PRAYER",
+            "CLAP_SLOW": "CLAP [SLOW]",
         }
         
         # Sort payloads horizontally so the left hand corresponds to left panel
@@ -259,8 +269,13 @@ class DebugVisualizer:
         cv2.imshow(self.window_name, frame)
 
     def close(self):
-        """Close the debug window."""
-        cv2.destroyWindow(self.window_name)
+        """Close the debug window safely."""
+        try:
+            # Only try to destroy if it likely exists
+            if cv2.getWindowProperty(self.window_name, cv2.WND_PROP_VISIBLE) >= 0:
+                cv2.destroyWindow(self.window_name)
+        except:
+            pass
 
     # ── Internal ─────────────────────────────────────────────────────────────
 

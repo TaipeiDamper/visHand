@@ -69,7 +69,7 @@ class GestureContext:
         best_idx = int(np.argmin(dists))
         
         min_dist = dists[best_idx]
-        if min_dist > 5.0:  # Distance threshold
+        if min_dist > 7.0:  # Reset to match legacy data consistency
             return "NONE"
             
         return str(_KNN_MODEL["labels"][best_idx])

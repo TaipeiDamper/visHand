@@ -134,7 +134,8 @@ class GestureInterpreter:
 
         arm_view = self._arm_assist.select_arm_view(hand_side, arm_features)
 
-        # Build Context for Evaluators
+        # --- Pipeline ---
+        # Build Context for Evaluators (Move up so _detect_events can use it)
         af = arm_features or {}
         ctx = GestureContext(
             lm,
@@ -148,8 +149,7 @@ class GestureInterpreter:
             hand_side=hand_side,
         )
 
-        # --- Pipeline ---
-        event  = self._detect_events(lm, timestamp, arm_view)
+        event  = self._detect_events(lm, timestamp, arm_view, ctx)
         intent, intent_conf, intent_risk, arbitration, arm_meta = self._classify_intent(
             ctx, timestamp, event, hand_side, arm_view, degraded_mode
         )
@@ -211,6 +211,7 @@ class GestureInterpreter:
 
         # SNAP two-phase machine
         self._snap_phase: str = "IDLE"        # "IDLE" | "READY"
+        self._last_snap_ready_time: float = 0.0
         self._prev_mid_thumb_dist: Optional[float] = None
         self._prev_idx_thumb_dist: Optional[float] = None
         self._prev_mid_palm_dist: Optional[float] = None
@@ -273,21 +274,44 @@ class GestureInterpreter:
         )
 
     # ── Event detection ───────────────────────────────────────────────────────
-
-    def _detect_events(self, lm: List[Point3D], timestamp: float, arm_view: dict) -> str:
+    
+    def _detect_events(self, lm: List[Point3D], timestamp: float, arm_view: dict, ctx: GestureContext) -> str:
         s = self.s
         now_ms_ok = (timestamp - self._last_snap_time) > (s.snap_cooldown_ms / 1000.0)
 
         # ── SNAP (two-phase composite scoring) ──────────────────────────────
+        # NEW: ML-based sequence check
+        ml_label = ctx.predicted_ml_label
         mid_thumb = mt.normalized_distance(lm[mt.MIDDLE_TIP], lm[mt.THUMB_TIP], lm)
         idx_thumb = mt.normalized_distance(lm[mt.INDEX_TIP], lm[mt.THUMB_TIP], lm)
         mid_palm  = mt.normalized_distance(lm[mt.MIDDLE_TIP], lm[0], lm) # 0 is WRIST
 
         if self._snap_phase == "IDLE":
-            if mid_thumb < s.snap_ready_threshold:
+            if ml_label == "SNAP_PREP":
                 self._snap_phase = "READY"
+                self._last_snap_ready_time = timestamp
+            elif mid_thumb < s.snap_ready_threshold:
+                self._snap_phase = "READY"
+                self._last_snap_ready_time = timestamp
 
         elif self._snap_phase == "READY":
+            # Check timeout for READY state (0.5s)
+            if timestamp - self._last_snap_ready_time > 0.5:
+                 self._snap_phase = "IDLE"
+                 return EV_NONE
+
+            if ml_label == "SNAP_ACTION":
+                # Strict: ML label PLUS Physics check PLUS Velocity check
+                if self._prev_mid_thumb_dist is not None:
+                    sep_vel = mid_thumb - self._prev_mid_thumb_dist
+                    # Only trigger if it's a FAST separation (velocity > 0.1 normalized palm width)
+                    if mid_thumb > (s.snap_trigger_threshold * 1.1) and sep_vel > 0.08:
+                        if now_ms_ok and self._event_allowed(EV_SNAP, timestamp):
+                            self._last_snap_time = timestamp
+                            self._snap_phase = "IDLE"
+                            self._register_event(EV_SNAP, timestamp)
+                            return EV_SNAP
+
             if mid_thumb > s.snap_trigger_threshold:
                 # Separation happened — check composite speeds
                 if self._prev_mid_thumb_dist is not None:
