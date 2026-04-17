@@ -161,41 +161,75 @@ class DebugVisualizer:
         # ── 4. Coloured border (logic state) ─────────────────────────────────
         cv2.rectangle(vis, (0, 0), (w - 1, h - 1), state_color, 3)
 
-        # ── 5. Info panel (top-left) ─────────────────────────────────────────
-        #  Semi-transparent dark background
+        # ── 5. Info panels (per hand) ─────────────────────────────────────────
         panel_w, panel_h = 260, 160
         overlay = vis.copy()
-        cv2.rectangle(overlay, (8, 8), (8 + panel_w, 8 + panel_h), (20, 20, 20), -1)
+        
+        # Draw dark backgrounds
+        for i in range(len(payloads)):
+            if not payloads[i]: continue
+            px = 8 if i == 0 else w - panel_w - 8
+            py = 8
+            cv2.rectangle(overlay, (px, py), (px + panel_w, py + panel_h), (20, 20, 20), -1)
+            
         cv2.addWeighted(overlay, 0.55, vis, 0.45, 0, vis)
-
-        # Logic state (large, coloured)
-        self._text(vis, logic, (18, 42), state_color, scale=0.95, bold=True)
-
-        # Intent
-        if intent == "IDLE":
-            intent_label = "IDLE"
-        else:
-            g_def = registry.get(intent)
-            if g_def:
-                # e.g., "CLOSED_FIST"
-                intent_label = f"{g_def.name}"
+        
+        # Number mapping including directional variants
+        _NUM_MAP = {
+            "CLOSED_FIST": "0 (FIST)",
+            "POINTING_UP": "1 (POINT)",
+            "INDEX_POINT_LEFT": "1 (POINT)",
+            "INDEX_POINT_RIGHT": "1 (POINT)",
+            "VICTORY": "2 (VICTORY)",
+            "NUMBER_3": "3",
+            "NUMBER_4": "4",
+            "OPEN_PALM": "5 (PALM)",
+            "PALM_TILT_LEFT": "5 (PALM)",
+            "PALM_TILT_RIGHT": "5 (PALM)",
+        }
+        
+        # Sort payloads horizontally so the left hand corresponds to left panel
+        sorted_payloads = [p for p in payloads if p]
+        sorted_payloads.sort(key=lambda p: float(p.get("transform", {}).get("anchor", {}).get("x", 0.5)))
+        
+        for i, p in enumerate(sorted_payloads):
+            px = 8 if i == 0 else w - panel_w - 8
+            
+            p_logic = p["state"]["logic"]
+            p_intent = p["state"]["intent"]
+            p_stable = p["state"]["is_stable"]
+            p_vel = p["dynamics"]["velocity"]
+            p_intensity = p["dynamics"]["intensity"]
+            p_rot = p["transform"]["rotation"]
+            p_color = _CLR.get(p_logic, _CLR["WHITE"])
+            
+            # Logic state
+            self._text(vis, p_logic, (px + 10, 42), p_color, scale=0.95, bold=True)
+            
+            # Intent mapping
+            if p_intent in _NUM_MAP:
+                intent_label = _NUM_MAP[p_intent]
+            elif p_intent == "IDLE":
+                intent_label = "IDLE"
             else:
-                intent_label = intent
+                g_def = registry.get(p_intent)
+                intent_label = f"{g_def.name}" if g_def else p_intent
+                
+            self._text(vis, intent_label, (px + 10, 72), _CLR["WHITE"], scale=0.52)
+            
+            # Stable indicator
+            stable_col  = (60, 200, 80) if p_stable else (100, 100, 100)
+            stable_txt  = "STABLE" if p_stable else "WARMUP"
+            self._text(vis, stable_txt, (px + 10, 96), stable_col, scale=0.48)
+            
+            # Metrics
+            self._text(vis, f"vel:{p_vel:.4f} int:{p_intensity:.2f} rot:{p_rot:.1f}",
+                       (px + 10, 116), _CLR["DIM"], scale=0.42)
+                       
+            # Frame info (only on first panel)
+            if i == 0 and fps > 0:
+                self._text(vis, f"FPS {fps:.1f}", (px + 10, 140), _CLR["DIM"], scale=0.45)
 
-        self._text(vis, intent_label, (18, 72), _CLR["WHITE"], scale=0.52)
-
-        # Stable indicator
-        stable_col  = (60, 200, 80) if stable else (100, 100, 100)
-        stable_txt  = "STABLE" if stable else "WARMUP"
-        self._text(vis, stable_txt, (18, 96), stable_col, scale=0.48)
-
-        # Metrics
-        self._text(vis, f"vel:{vel:.4f}  int:{intensity:.2f}  rot:{rotation:.1f}",
-                   (18, 116), _CLR["DIM"], scale=0.42)
-
-        # FPS
-        if fps > 0:
-            self._text(vis, f"FPS {fps:.1f}", (18, 140), _CLR["DIM"], scale=0.45)
 
         # ── 6. Event fading banner (bottom-centre) ────────────────────────────
         if event != EV_NONE:

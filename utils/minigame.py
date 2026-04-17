@@ -118,22 +118,19 @@ class Minigame:
         return [i for i, p in enumerate(payloads) if p and p["state"]["logic"] in ("ACTIVE", "HOVER")]
 
     def _handle_start_state(self, vis, payloads, valid_indices, timestamp, w, h):
-        if len(valid_indices) == 2:
-            i1, i2 = valid_indices[0], valid_indices[1]
-            if payloads[i1]["state"]["intent"] == "FIST" and payloads[i2]["state"]["intent"] == "FIST":
-                if self.start_hold_time is None:
-                    self.start_hold_time = timestamp
-                elif timestamp - self.start_hold_time > 1.5:
-                    self.is_active = True
-                    self.score = 0
-                    self.boxes = []
-                    self.start_hold_time = None
-                    self.exit_hold_time = None
-                    self.immunity_until_by_side.clear()
-                    self.recent_fist_sides.clear()
-                    cv2.putText(vis, "GAME START!", (w // 2 - 110, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 255, 255), 3)
-            else:
+        fists = sum(1 for p in payloads if p and p["state"]["intent"] == "CLOSED_FIST")
+        if fists >= 2:
+            if self.start_hold_time is None:
+                self.start_hold_time = timestamp
+            elif timestamp - self.start_hold_time > 0.8:
+                self.is_active = True
+                self.score = 0
+                self.boxes = []
                 self.start_hold_time = None
+                self.exit_hold_time = None
+                self.immunity_until_by_side.clear()
+                self.recent_fist_sides.clear()
+                cv2.putText(vis, "GAME START!", (w // 2 - 110, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 255, 255), 3)
         else:
             self.start_hold_time = None
 
@@ -172,7 +169,7 @@ class Minigame:
         for idx in valid_indices:
             side = payloads[idx]["header"]["hand_side"]
             intent = payloads[idx]["state"]["intent"]
-            if intent == "FIST":
+            if intent == "CLOSED_FIST":
                 new_fist_sides.add(side)
                 self.recent_fist_sides[side] = timestamp
         released_sides = self.curr_fist_sides - new_fist_sides
@@ -219,7 +216,7 @@ class Minigame:
                 nx, ny = rx / dist, ry / dist
                 tx, ty = -ny, nx
 
-                if intent == "FIST":
+                if intent == "CLOSED_FIST":
                     pull = min(7.0, 320.0 / dist)
                     swirl = pull * 0.9
                     box.vx += (nx * pull + tx * swirl) / box.mass
@@ -321,7 +318,7 @@ class Minigame:
             intent = payloads[idx]["state"]["intent"]
             ax, ay = self._anchor_xy(payloads[idx], w, h)
             ax, ay = int(ax), int(ay)
-            if intent == "FIST":
+            if intent == "CLOSED_FIST":
                 cv2.circle(vis, (ax, ay), 58, (0, 0, 255), 2)
                 cv2.putText(vis, "GRAVITY", (ax - 42, ay - 66), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 255), 2)
             elif intent in ("PINCH_DRAG", "PINCH_HOLD"):
@@ -341,10 +338,10 @@ class Minigame:
 
         if not self.is_active:
             self._handle_start_state(vis, payloads, valid_indices, timestamp, w, h)
-            msg = "Hold FIST with BOTH hands for 1.5s to TEST MODE"
+            msg = "Hold FIST with BOTH hands for 0.8s to TEST MODE"
             cv2.putText(vis, msg, (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
             if self.start_hold_time is not None:
-                progress = int((timestamp - self.start_hold_time) / 1.5 * 100)
+                progress = int((timestamp - self.start_hold_time) / 0.8 * 100)
                 cv2.putText(vis, f"Starting... {progress}%", (20, h - 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 100, 255), 2)
             return vis
 

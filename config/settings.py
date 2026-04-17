@@ -20,15 +20,15 @@ class Settings:
 
     # ── MediaPipe Hands ────────────────────────────────────────────────────────
     max_hands: int = 2             # 2 for dual-hand mode
-    adaptive_max_hands: bool = True
-    dual_hand_probe_interval: int = 20
-    dual_hand_hold_frames: int = 45
+    adaptive_max_hands: bool = False
+    dual_hand_probe_interval: int = 15
+    dual_hand_hold_frames: int = 60
     min_detection_confidence: float = 0.70
     min_tracking_confidence: float = 0.60
     hand_landmarker_model_path: str = ""
     hand_landmarker_num_threads: int = 2
     preferred_detector_backend: str = "tasks"  # "tasks" | "legacy"
-    use_gpu_delegate: bool = False  # optional experiment on Windows
+    use_gpu_delegate: bool = True  # enable GPU delegate for Tasks backend
     enable_pose_assist: bool = False
     pose_landmarker_model_path: str = ""
     pose_landmarker_num_threads: int = 2
@@ -43,7 +43,7 @@ class Settings:
 
     # ── One Euro Filter ────────────────────────────────────────────────────────
     one_euro_min_cutoff: float = 1.0    # lower → smoother at rest, more lag
-    one_euro_beta: float = 0.007        # higher → faster response on fast motion
+    one_euro_beta: float = 0.015        # higher → faster response on fast motion
     one_euro_d_cutoff: float = 1.0
     stability_warmup_frames: int = 15   # frames before is_stable = True
     use_vectorized_filter: bool = True
@@ -111,11 +111,11 @@ class Settings:
 
     # ── Intent Engine ─────────────────────────────────────────────────────────
     intent_min_confidence: float = 0.6     # 最低信心門檻，低於此則為 IDLE
-    intent_debounce_frames: int = 3        # 真實 Intent 必須連續勝出多少幀才切換
+    intent_debounce_frames: int = 2        # 真實 Intent 必須連續勝出多少幀才切換
 
     # ── Runtime Optimization / Telemetry ───────────────────────────────────────
     telemetry_buffer_size: int = 300
-    enable_adaptive_skipping: bool = True
+    enable_adaptive_skipping: bool = False
     adaptive_skip_velocity_threshold: float = 0.003
     quality_brightness_min: float = 0.12
     quality_blur_var_min: float = 45.0

@@ -145,6 +145,7 @@ class GestureInterpreter:
             wrist_body_x=arm_view.get("wrist_body_x", 0.0),
             forearm_depth_delta=arm_view.get("forearm_depth_delta", 0.0),
             arm_confidence=arm_view.get("arm_confidence", 0.0),
+            hand_side=hand_side,
         )
 
         # --- Pipeline ---

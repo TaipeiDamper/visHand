@@ -69,7 +69,7 @@ class InferenceWorker:
             target_frame = frame_pkt.frame
             remap_meta = None
             quality = self._quality_gate.evaluate(frame_pkt.frame)
-            if self.settings.enable_roi_tracking and self._tracking_anchor is not None:
+            if self.settings.enable_roi_tracking and self.settings.max_hands == 1 and self._tracking_anchor is not None:
                 roi = self._compute_roi(frame_pkt.frame.shape[:2], self._tracking_anchor)
                 if roi is not None:
                     mode = "ROI"
@@ -283,11 +283,18 @@ class InferenceWorker:
             track_id=result.track_id,
         )
 
-    def _update_tracking_anchor(self, results: Optional[List[HandLandmarkResult]]):
+    def _update_tracking_anchor(self, results: Optional[List[HandLandmarkResult]]) -> None:
+        """Update the tracking anchor based on detection results."""
         if not results:
             self._tracking_anchor = None
             return
-        wrist = results[0].landmarks[0]
+        # In multi-hand mode, anchor follows slot-0 if possible
+        target_result = results[0]
+        for r in results:
+            if r.track_id == "slot-0":
+                target_result = r
+                break
+        wrist = target_result.landmarks[0]
         self._tracking_anchor = (wrist.x, wrist.y)
 
     @staticmethod

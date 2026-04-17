@@ -77,7 +77,7 @@ def _eval_pointing_up(ctx: GestureContext) -> float:
 
 def _eval_victory(ctx: GestureContext) -> float:
     ext = ctx.ext_array
-    if ext[1] and ext[2] and not ext[3] and not ext[4]:
+    if not ext[0] and ext[1] and ext[2] and not ext[3] and not ext[4]:
         return 1.0
     return 0.0
 
@@ -166,6 +166,25 @@ def _eval_palm_tilt_right(ctx: GestureContext) -> float:
     if angle > th:
         return min(1.0, abs(angle) / max(th * 2.0, 1e-6))
     return 0.0
+
+
+def _eval_number_0(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "0" else 0.0
+
+def _eval_number_1(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "1" else 0.0
+
+def _eval_number_2(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "2" else 0.0
+
+def _eval_number_3(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "3" else 0.0
+
+def _eval_number_4(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "4" else 0.0
+
+def _eval_number_5(ctx: GestureContext) -> float:
+    return 1.0 if ctx.predicted_ml_label == "5" else 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -352,6 +371,94 @@ CUSTOM_GESTURES: List[GestureDef] = [
         evaluator=_eval_palm_tilt_right,
         risk_level="low",
         mutex_group="tilt",
+    ),
+    GestureDef(
+        name="NUMBER_3",
+        display_name="數字 3",
+        category="custom",
+        description="三指伸出",
+        suggested_usage="數字 3",
+        priority=80,
+        evaluator=_eval_number_3,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="NUMBER_4",
+        display_name="數字 4",
+        category="custom",
+        description="四指伸出",
+        suggested_usage="數字 4",
+        priority=80,
+        evaluator=_eval_number_4,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="CLOSED_FIST",
+        display_name="0 (FIST) [ML]",
+        category="custom",
+        description="ML 模型判定之數字 0",
+        suggested_usage="數字 0",
+        priority=150,
+        evaluator=_eval_number_0,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="POINTING_UP",
+        display_name="1 (POINT) [ML]",
+        category="custom",
+        description="ML 模型判定之數字 1",
+        suggested_usage="數字 1",
+        priority=150,
+        evaluator=_eval_number_1,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="VICTORY",
+        display_name="2 (VICTORY) [ML]",
+        category="custom",
+        description="ML 模型判定之數字 2",
+        suggested_usage="數字 2",
+        priority=150,
+        evaluator=_eval_number_2,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="NUMBER_3",
+        display_name="3 [ML]",
+        category="custom",
+        description="ML 模型判定之數字 3",
+        suggested_usage="數字 3",
+        priority=150,
+        evaluator=_eval_number_3,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="NUMBER_4",
+        display_name="4 [ML]",
+        category="custom",
+        description="ML 模型判定之數字 4",
+        suggested_usage="數字 4",
+        priority=150,
+        evaluator=_eval_number_4,
+        risk_level="low",
+        mutex_group="pose_base",
+    ),
+    GestureDef(
+        name="OPEN_PALM",
+        display_name="5 (PALM) [ML]",
+        category="custom",
+        description="ML 模型判定之數字 5",
+        suggested_usage="數字 5",
+        priority=150,
+        evaluator=_eval_number_5,
+        risk_level="low",
+        mutex_group="pose_base",
     ),
 ]
 
